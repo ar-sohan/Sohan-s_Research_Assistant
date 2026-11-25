@@ -13,3 +13,7 @@ Two lines per milestone: what surprised me, and what broke.
 ## Milestone 2: One tool call, by hand
 - Surprised: the model never runs anything; it only asks. Our code decides, runs the function and reports back.
 - Broke: nothing; qwen2.5:7b called search_arxiv for the audio question and skipped it for 2 + 2. One round trip took about 2 minutes on this laptop.
+
+## Milestone 3: The agent loop
+- Surprised: arXiv only applies `all:` to the first word, so 'all:retrieval augmented generation' returned off-topic papers. Prefixing every word with AND fixed it.
+- Broke: qwen2.5:7b stopped after one search despite the system prompt. A code guard (MIN_SEARCHES) pushes back; a prompt is a request, code is a guarantee.

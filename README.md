@@ -32,3 +32,4 @@ Each milestone is one git commit, so `git log` walks you through the build.
 | 0 | Talk to a model | One OpenAI-compatible client for any provider | `paper_agent/llm.py` |
 | 1 | arXiv tool, no LLM | `search_arxiv` and `get_paper` as plain functions, 3 s rate limit, pytest tests | `paper_agent/tools/arxiv.py` |
 | 2 | One tool call, by hand | The raw tool-calling protocol: schema in, `tool_calls` out, `role: tool` result back | `paper_agent/one_call.py` |
+| 3 | The agent loop | Model -> tools -> results -> model, until an answer or `max_steps`; tool registry; trace output; minimum-search guard | `paper_agent/agent.py`, `paper_agent/tools/registry.py` |

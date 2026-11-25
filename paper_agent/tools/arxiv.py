@@ -64,8 +64,13 @@ def _to_paper(entry) -> dict:
 
 def search_arxiv(query: str, max_results: int = 5) -> list[dict]:
     """Search arXiv and return up to `max_results` papers, most relevant first."""
+    # arXiv's query syntax only applies a field prefix to the FIRST word:
+    # "all:retrieval augmented generation" matches lots of off-topic papers.
+    # Prefixing every word and joining with AND keeps results on topic.
+    terms = [t for t in re.split(r"\s+", query.strip()) if t]
+    search_query = " AND ".join(f"all:{t}" for t in terms) or "all:*"
     xml = _get({
-        "search_query": f"all:{query}",
+        "search_query": search_query,
         "max_results": max_results,
         "sortBy": "relevance",
     })
