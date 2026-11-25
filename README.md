@@ -30,3 +30,4 @@ Each milestone is one git commit, so `git log` walks you through the build.
 | # | Milestone | What it adds | Key file |
 |---|-----------|--------------|----------|
 | 0 | Talk to a model | One OpenAI-compatible client for any provider | `paper_agent/llm.py` |
+| 1 | arXiv tool, no LLM | `search_arxiv` and `get_paper` as plain functions, 3 s rate limit, pytest tests | `paper_agent/tools/arxiv.py` |
