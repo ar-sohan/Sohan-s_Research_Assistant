@@ -1,0 +1,7 @@
+openai>=1.40      # OpenAI-compatible client: works with Ollama, Groq, Gemini, OpenRouter
+httpx>=0.27       # HTTP requests to the arXiv API
+feedparser>=6.0   # parses arXiv's Atom XML feed
+python-dotenv>=1.0
+rich>=13.0        # pretty trace output in the terminal
+pydantic>=2.0     # validates tool arguments (Milestone 5)
+pytest>=8.0
