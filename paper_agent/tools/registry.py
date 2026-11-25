@@ -14,6 +14,7 @@ import json
 
 from pydantic import BaseModel, Field, ValidationError
 
+from paper_agent.memory import get_library
 from paper_agent.tools.arxiv import get_paper, search_arxiv
 
 # Abstracts are long. Search results are truncated to keep the conversation
@@ -32,6 +33,28 @@ class SearchArgs(BaseModel):
 
 class GetPaperArgs(BaseModel):
     arxiv_id: str = Field(description="The arXiv id, e.g. '1706.03762'")
+
+
+class SearchLibraryArgs(BaseModel):
+    query: str = Field(min_length=2, description="Keywords to look for in saved papers")
+
+
+class SaveNoteArgs(BaseModel):
+    paper_id: str = Field(description="arXiv id of a paper already retrieved")
+    note: str = Field(min_length=3, description="The takeaway to remember")
+
+
+def _search_library(query: str) -> list[dict]:
+    """Milestone 6: look in the local SQLite library before going to arXiv."""
+    papers = get_library().search(query)
+    for p in papers:
+        if len(p["summary"]) > SEARCH_SUMMARY_CHARS:
+            p["summary"] = p["summary"][:SEARCH_SUMMARY_CHARS] + "..."
+    return papers
+
+
+def _save_note(paper_id: str, note: str) -> dict:
+    return get_library().save_note(paper_id, note)
 
 
 def _search_truncated(query: str, max_results: int = 5) -> list[dict]:
@@ -74,6 +97,22 @@ TOOLS = {
         _get_paper_or_error,
         GetPaperArgs,
         _schema("get_paper", "Fetch one paper's full details and full abstract by its arXiv id.", GetPaperArgs),
+    ),
+    "search_library": (
+        _search_library,
+        SearchLibraryArgs,
+        _schema(
+            "search_library",
+            "Search YOUR OWN library of papers you fetched in earlier sessions, plus your saved "
+            "notes. Fast and free: call it FIRST, before search_arxiv.",
+            SearchLibraryArgs,
+        ),
+    ),
+    "save_note": (
+        _save_note,
+        SaveNoteArgs,
+        _schema("save_note", "Save a short takeaway about a paper to your library for future sessions.",
+                SaveNoteArgs),
     ),
 }
 

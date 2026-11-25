@@ -25,3 +25,7 @@ Two lines per milestone: what surprised me, and what broke.
 ## Milestone 5: Make it robust
 - Surprised: for 'quantum basket weaving' the model quietly changed the topic to quantum basket OPTIONS (finance) and summarised those. Search always returns something; relevance has to be judged against the original topic.
 - Broke first: the irrelevant-results problem, not errors. Fixed with explicit 'keep the topic, say nothing relevant' rules in the system prompt.
+
+## Milestone 6: Memory
+- Surprised: the model fires search_library AND three arXiv searches in ONE reply (parallel tool calls), before it has seen the library results, so the library saved nothing (3 arXiv calls on both runs). Running the library call alone first and skipping the rest cut the second run to 1 arXiv call.
+- Broke: in the chat follow-up the model said the EMOVOME dataset was about Portuguese; it mixed up two papers. Citations were real, but the claim was not. That is what the faithfulness judge in Milestone 7 is for.

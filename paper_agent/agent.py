@@ -1,4 +1,4 @@
-"""Milestone 3: the agent loop. This is the core of every agent.
+"""The agent loop (Milestone 3), with citations (4), robustness (5) and memory (6).
 
 An agent is an LLM in a loop:
 
@@ -11,6 +11,9 @@ An agent is an LLM in a loop:
 
 `max_steps` guarantees the loop always ends. Each pass is one model call,
 so the step count is a direct measure of cost and speed.
+
+Milestone 6 turned the loop into an `Agent` class so the `messages` list
+(short-term memory) survives between questions; see paper_agent/chat.py.
 
 Run:
     python -m paper_agent.agent "retrieval augmented generation"
@@ -25,19 +28,24 @@ from rich.console import Console
 from paper_agent import config
 from paper_agent.citations import build_references, check_citations, remove_citations
 from paper_agent.llm import chat
+from paper_agent.memory import get_library
 from paper_agent.tools.registry import Dispatcher, tool_schemas
 
 console = Console()
 
-MIN_SEARCHES = 2  # the agent must search at least this many times before answering
+MIN_SEARCHES = 2  # search calls (arXiv or library) required before a first answer
+MAX_HISTORY_CHARS = 24_000  # Milestone 6: above this, old tool results are dropped
+SEARCH_TOOLS = {"search_arxiv", "search_library"}
 
 SYSTEM_PROMPT = """You are a research assistant that writes short literature summaries.
 
 How to work:
-1. Call search_arxiv 2 to 4 times with DIFFERENT short queries (2-4 keywords each:
-   synonyms, sub-topics, key methods). Do not write the summary after only one search.
-2. Pick the 5 to 8 most relevant papers from what the searches returned.
-3. Write a summary of about 250 words: the main ideas, how the papers relate, open questions.
+1. Call search_library FIRST: it holds papers you fetched in earlier sessions.
+2. Then call search_arxiv 1 to 3 times with DIFFERENT short queries (2-4 keywords each:
+   synonyms, sub-topics, key methods). If the library already had 5+ relevant papers,
+   one arXiv search is enough.
+3. Pick the 5 to 8 most relevant papers from what the searches returned.
+4. Write a summary of about 250 words: the main ideas, how the papers relate, open questions.
 
 Rules:
 - Cite ONLY papers that your tool calls returned. Never cite from memory.
@@ -48,6 +56,7 @@ Rules:
 - If no paper is really about the topic, answer only: "I found nothing relevant on arXiv
   for this topic." and explain in one sentence what the searches returned instead.
 - If a tool returns an error, read it, fix your arguments or try another query.
+- For follow-up questions, reuse the papers already in this conversation; search only if needed.
 """
 
 
@@ -56,92 +65,156 @@ def _trace_step(step: int, name: str, args: str, result) -> None:
     if isinstance(result, dict) and "error" in result:
         outcome = f"[red]error: {result['error'][:120]}[/red]"
     elif isinstance(result, dict) and "note" in result:
-        outcome = "[yellow]duplicate call, returned cached results[/yellow]"
+        kind = "skipped" if result["note"].startswith("Skipped") else "duplicate call, returned cached results"
+        outcome = f"[yellow]{kind}[/yellow]"
     else:
         outcome = f"{len(result) if isinstance(result, list) else 1} result(s)"
     console.print(f"[dim]step {step}[/dim] [cyan]{name}[/cyan]({args}) -> {outcome}", highlight=False)
 
 
-def _remember(result, seen_papers: dict) -> None:
-    """Milestone 4: record every paper a tool returned. This is our ground truth."""
+def _papers_in(result) -> list[dict]:
+    """Pull the paper dicts out of any tool result (list, single paper, cached duplicate)."""
     if isinstance(result, dict) and "results" in result:  # a cached duplicate
         result = result["results"]
     papers = result if isinstance(result, list) else [result]
-    for p in papers:
-        if isinstance(p, dict) and "id" in p:
-            seen_papers[p["id"]] = p
+    return [p for p in papers if isinstance(p, dict) and "id" in p and "title" in p]
 
 
-def _finalize(text: str, seen_papers: dict) -> str:
-    """Milestone 4: drop unverified citations and append a reference list built in code."""
-    valid, invalid = check_citations(text, seen_papers)
-    if invalid:
-        console.print(f"[red]removing unverified citations: {invalid}[/red]")
-        text = remove_citations(text, invalid)
-    if not valid:
-        return text + "\n\n_(No verified citations.)_"
-    return text + "\n\n" + build_references(valid, seen_papers)
+class Agent:
+    """One conversation with the research assistant.
+
+    Short-term memory = self.messages, kept between calls to ask().
+    Long-term memory  = the SQLite library (paper_agent/memory.py).
+    """
+
+    def __init__(self, max_steps: int = 8, verbose: bool = True):
+        self.max_steps = max_steps
+        self.verbose = verbose
+        self.messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
+        self.seen_papers: dict[str, dict] = {}  # Milestone 4: ground truth for citations
+        self.dispatch = Dispatcher()            # Milestone 5: safe calls + duplicate cache
+        self.stats: dict = {}                   # Milestone 7: numbers about the last ask()
+
+    def _log(self, text: str) -> None:
+        if self.verbose:
+            console.print(text, highlight=False)
+
+    def _compact_history(self, turn_start: int) -> None:
+        """Milestone 6: when history is long, blank out tool results from EARLIER turns.
+
+        The final answers stay, so follow-ups still have context; the papers are
+        still in seen_papers and the library, so citations keep working.
+        """
+        if len(json.dumps(self.messages)) <= MAX_HISTORY_CHARS:
+            return
+        for m in self.messages[:turn_start]:
+            if m["role"] == "tool":
+                m["content"] = '{"note": "old tool result removed to save space"}'
+        self._log("[dim]history compacted: old tool results removed[/dim]")
+
+    def ask(self, question: str, min_searches: int = MIN_SEARCHES, topic: str = "") -> str:
+        turn_start = len(self.messages)
+        self.messages.append({"role": "user", "content": question})
+        self._compact_history(turn_start)
+
+        searches = 0
+        asked_to_fix = False
+        self.stats = {"steps": 0, "tool_calls": 0, "arxiv_calls": 0, "library_hits": 0,
+                      "duplicates_before": self.dispatch.duplicates}
+
+        for step in range(1, self.max_steps + 1):
+            self.stats["steps"] = step
+            reply = chat(self.messages, tools=tool_schemas())
+            self.messages.append(reply.model_dump(exclude_none=True))
+
+            if not reply.tool_calls:
+                # Small local models often stop after one search despite the prompt.
+                # A prompt is a request; code is a guarantee.
+                if searches < min_searches and step < self.max_steps:
+                    self._log("[yellow]answered after too few searches, asking for another[/yellow]")
+                    # Drop the premature answer so the next one is fresh, not a continuation.
+                    self.messages.pop()
+                    self.messages.append({"role": "user", "content": (
+                        "Before writing, call search_arxiv again with a different query "
+                        "(a synonym, sub-topic or key method) to cover the topic better."
+                    )})
+                    continue
+
+                # Milestone 4: check citations before accepting the answer.
+                valid, invalid = check_citations(reply.content, self.seen_papers)
+                if (invalid or not valid) and self.seen_papers and not asked_to_fix and step < self.max_steps:
+                    asked_to_fix = True
+                    problem = (f"You cited {invalid}, which you never retrieved." if invalid
+                               else "You did not cite any papers.")
+                    self._log(f"[yellow]citation problem, asking for a fix: {problem}[/yellow]")
+                    self.messages.append({"role": "user", "content": (
+                        f"{problem} Rewrite the answer citing only papers your tools returned, "
+                        "inline in exactly this form: [arXiv:<id>]. If nothing relevant was found, say so."
+                    )})
+                    continue
+
+                self._log(f"[green]done in {step} model call(s), {searches} search(es), "
+                          f"{len(self.seen_papers)} paper(s) seen[/green]")
+                return self._finalize(reply.content)
+
+            # Models can request SEVERAL tools in one reply ("parallel tool calls").
+            # qwen asks for search_library AND three arXiv searches at once, before it
+            # has seen what the library holds, so the library saves nothing.
+            # Rule enforced in code: when the library is in the batch, run it alone
+            # first and send the others back as "skipped, decide again".
+            names = [c.function.name for c in reply.tool_calls]
+            library_first = "search_library" in names and len(names) > 1
+
+            for call in reply.tool_calls:
+                name = call.function.name
+                if library_first and name != "search_library":
+                    result = {"note": "Skipped. Read the search_library results first, then call "
+                                      "search_arxiv only for what the library is missing."}
+                    self._trace(step, name, call.function.arguments, result)
+                    self.messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
+                    continue
+                searches += name in SEARCH_TOOLS
+                self.stats["tool_calls"] += 1
+                result = self.dispatch(name, call.function.arguments)
+                papers = _papers_in(result)
+                is_cached = isinstance(result, dict) and "note" in result
+                if name in ("search_arxiv", "get_paper") and not is_cached:
+                    self.stats["arxiv_calls"] += 1
+                    get_library().add_papers(papers, topic or question)  # Milestone 6: remember
+                if name == "search_library":
+                    self.stats["library_hits"] += len(papers)
+                for p in papers:
+                    self.seen_papers[p["id"]] = p
+                self._trace(step, name, call.function.arguments, result)
+                self.messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
+
+        # Out of steps: ask once more, WITHOUT tools, so the model must write the answer.
+        self._log(f"[yellow]max_steps ({self.max_steps}) reached, forcing a final answer[/yellow]")
+        self.messages.append({"role": "user", "content": "Stop searching. Write the answer now from what you have."})
+        reply = chat(self.messages)
+        self.messages.append(reply.model_dump(exclude_none=True))
+        return self._finalize(reply.content)
+
+    def _trace(self, step: int, name: str, args: str, result) -> None:
+        if self.verbose:
+            _trace_step(step, name, args, result)
+
+    def _finalize(self, text: str) -> str:
+        """Milestone 4: drop unverified citations and append a reference list built in code."""
+        valid, invalid = check_citations(text, self.seen_papers)
+        self.stats.update(valid_citations=len(valid), invalid_citations=len(invalid), cited_ids=valid,
+                          duplicates=self.dispatch.duplicates - self.stats.pop("duplicates_before", 0))
+        if invalid:
+            self._log(f"[red]removing unverified citations: {invalid}[/red]")
+            text = remove_citations(text, invalid)
+        if not valid:
+            return text + "\n\n_(No verified citations.)_"
+        return text + "\n\n" + build_references(valid, self.seen_papers)
 
 
 def run_agent(topic: str, max_steps: int = 8) -> str:
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": f"Write a literature summary on: {topic}"},
-    ]
-
-    searches = 0           # how many times search_arxiv has run
-    seen_papers = {}       # Milestone 4: id -> paper, for every paper a tool returned
-    asked_to_fix = False   # Milestone 4: we give the model one chance to fix bad citations
-    dispatch = Dispatcher()  # Milestone 5: safe tool calls + duplicate detection, per run
-
-    for step in range(1, max_steps + 1):
-        reply = chat(messages, tools=tool_schemas())
-        messages.append(reply.model_dump(exclude_none=True))
-
-        if not reply.tool_calls:
-            # Small local models often stop after one search despite the prompt.
-            # A prompt is a request; code is a guarantee. If it answered too
-            # early, push back and let the loop continue.
-            if searches < MIN_SEARCHES and step < max_steps:
-                console.print("[yellow]answered after too few searches, asking for another[/yellow]")
-                # Drop the premature answer. If we kept it, the model would later
-                # write "additional insights" that continue it instead of a fresh summary.
-                messages.pop()
-                messages.append({"role": "user", "content": (
-                    "Before writing, call search_arxiv again with a different query "
-                    "(a synonym, sub-topic or key method) to cover the topic better."
-                )})
-                continue
-
-            # Milestone 4: check citations before accepting the answer.
-            valid, invalid = check_citations(reply.content, seen_papers)
-            if (invalid or not valid) and seen_papers and not asked_to_fix and step < max_steps:
-                asked_to_fix = True
-                problem = (f"You cited {invalid}, which you never retrieved." if invalid
-                           else "You did not cite any papers.")
-                console.print(f"[yellow]citation problem, asking for a fix: {problem}[/yellow]")
-                messages.append({"role": "user", "content": (
-                    f"{problem} Rewrite the summary citing only papers your searches returned, "
-                    "inline in exactly this form: [arXiv:<id>]"
-                )})
-                continue
-
-            console.print(f"[green]done in {step} model call(s), {searches} search(es), "
-                          f"{len(seen_papers)} paper(s) seen[/green]")
-            return _finalize(reply.content, seen_papers)
-
-        for call in reply.tool_calls:
-            if call.function.name == "search_arxiv":
-                searches += 1
-            result = dispatch(call.function.name, call.function.arguments)
-            _remember(result, seen_papers)
-            _trace_step(step, call.function.name, call.function.arguments, result)
-            messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
-
-    # Out of steps: ask once more, WITHOUT tools, so the model must write the answer.
-    console.print(f"[yellow]max_steps ({max_steps}) reached, forcing a final answer[/yellow]")
-    messages.append({"role": "user", "content": "Stop searching. Write the summary now from what you have."})
-    return _finalize(chat(messages).content, seen_papers)
+    """One-shot use: a fresh Agent writes one literature summary."""
+    return Agent(max_steps=max_steps).ask(f"Write a literature summary on: {topic}", topic=topic)
 
 
 if __name__ == "__main__":
