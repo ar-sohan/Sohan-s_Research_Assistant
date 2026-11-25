@@ -19,11 +19,13 @@ Run:
 import json
 import sys
 
+from openai import APIConnectionError
 from rich.console import Console
 
+from paper_agent import config
 from paper_agent.citations import build_references, check_citations, remove_citations
 from paper_agent.llm import chat
-from paper_agent.tools.registry import dispatch, tool_schemas
+from paper_agent.tools.registry import Dispatcher, tool_schemas
 
 console = Console()
 
@@ -40,18 +42,30 @@ How to work:
 Rules:
 - Cite ONLY papers that your tool calls returned. Never cite from memory.
 - Cite inline in exactly this form: [arXiv:1706.03762]
-- If the searches found nothing relevant, say so honestly instead of inventing papers.
+- Keep the user's topic as it is. Do not swap it for a nearby topic that has more papers.
+- Before writing, check each paper against the ORIGINAL topic. Search engines always return
+  something; a paper that only shares a word with the topic is not relevant.
+- If no paper is really about the topic, answer only: "I found nothing relevant on arXiv
+  for this topic." and explain in one sentence what the searches returned instead.
+- If a tool returns an error, read it, fix your arguments or try another query.
 """
 
 
-def _trace_step(step: int, name: str, args: dict, result) -> None:
+def _trace_step(step: int, name: str, args: str, result) -> None:
     """Print one line per tool call so you can see what the agent did."""
-    size = len(result) if isinstance(result, list) else (1 if result else 0)
-    console.print(f"[dim]step {step}[/dim] [cyan]{name}[/cyan]({args}) -> {size} result(s)")
+    if isinstance(result, dict) and "error" in result:
+        outcome = f"[red]error: {result['error'][:120]}[/red]"
+    elif isinstance(result, dict) and "note" in result:
+        outcome = "[yellow]duplicate call, returned cached results[/yellow]"
+    else:
+        outcome = f"{len(result) if isinstance(result, list) else 1} result(s)"
+    console.print(f"[dim]step {step}[/dim] [cyan]{name}[/cyan]({args}) -> {outcome}", highlight=False)
 
 
 def _remember(result, seen_papers: dict) -> None:
     """Milestone 4: record every paper a tool returned. This is our ground truth."""
+    if isinstance(result, dict) and "results" in result:  # a cached duplicate
+        result = result["results"]
     papers = result if isinstance(result, list) else [result]
     for p in papers:
         if isinstance(p, dict) and "id" in p:
@@ -78,6 +92,7 @@ def run_agent(topic: str, max_steps: int = 8) -> str:
     searches = 0           # how many times search_arxiv has run
     seen_papers = {}       # Milestone 4: id -> paper, for every paper a tool returned
     asked_to_fix = False   # Milestone 4: we give the model one chance to fix bad citations
+    dispatch = Dispatcher()  # Milestone 5: safe tool calls + duplicate detection, per run
 
     for step in range(1, max_steps + 1):
         reply = chat(messages, tools=tool_schemas())
@@ -120,7 +135,7 @@ def run_agent(topic: str, max_steps: int = 8) -> str:
                 searches += 1
             result = dispatch(call.function.name, call.function.arguments)
             _remember(result, seen_papers)
-            _trace_step(step, call.function.name, json.loads(call.function.arguments), result)
+            _trace_step(step, call.function.name, call.function.arguments, result)
             messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(result)})
 
     # Out of steps: ask once more, WITHOUT tools, so the model must write the answer.
@@ -131,6 +146,13 @@ def run_agent(topic: str, max_steps: int = 8) -> str:
 
 if __name__ == "__main__":
     topic = " ".join(sys.argv[1:]) or "retrieval augmented generation"
+    try:
+        answer = run_agent(topic)
+    except APIConnectionError:
+        # Milestone 5: the model server is unreachable (Ollama not running, no internet).
+        console.print(f"[red]Cannot reach the model at {config.LLM_BASE_URL}. "
+                      "Is Ollama running? Try: ollama serve[/red]")
+        sys.exit(1)
     # markup=False: rich treats [square brackets] as style tags, which would
     # silently swallow our [arXiv:1234.5678] citations when printing.
-    console.print(run_agent(topic), markup=False)
+    console.print(answer, markup=False)

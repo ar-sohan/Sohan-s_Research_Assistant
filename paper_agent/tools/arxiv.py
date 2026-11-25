@@ -23,16 +23,30 @@ MIN_GAP_SECONDS = 3.0
 _last_request_at = 0.0
 
 
-def _get(params: dict) -> str:
-    """GET the arXiv API politely: never two requests less than 3 s apart."""
+def _get(params: dict, retries: int = 1) -> str:
+    """GET the arXiv API politely: never two requests less than 3 s apart.
+
+    Milestone 5: on a network error or a 5xx/429 answer, wait and retry once
+    (backoff), then give up by raising. The dispatcher turns that into an
+    {"error": ...} result for the model.
+    """
     global _last_request_at
-    wait = MIN_GAP_SECONDS - (time.monotonic() - _last_request_at)
-    if wait > 0:
-        time.sleep(wait)
-    resp = httpx.get(ARXIV_URL, params=params, timeout=30)
-    _last_request_at = time.monotonic()
-    resp.raise_for_status()
-    return resp.text
+    for attempt in range(retries + 1):
+        wait = MIN_GAP_SECONDS - (time.monotonic() - _last_request_at)
+        if wait > 0:
+            time.sleep(wait)
+        try:
+            resp = httpx.get(ARXIV_URL, params=params, timeout=20)
+            _last_request_at = time.monotonic()
+            resp.raise_for_status()
+            return resp.text
+        except (httpx.TransportError, httpx.HTTPStatusError) as e:
+            _last_request_at = time.monotonic()
+            retryable = isinstance(e, httpx.TransportError) or e.response.status_code in (429, 500, 502, 503, 504)
+            if attempt == retries or not retryable:
+                raise
+            time.sleep(5 * (attempt + 1))  # back off before the retry
+    raise RuntimeError("unreachable")
 
 
 def _clean(text: str) -> str:

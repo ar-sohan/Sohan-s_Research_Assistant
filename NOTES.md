@@ -21,3 +21,7 @@ Two lines per milestone: what surprised me, and what broke.
 ## Milestone 4: Grounded citations
 - Surprised: qwen2.5:7b wrote bare ids like [2506.06962] instead of [arXiv:2506.06962], so the regex accepts both.
 - Broke: rich's console.print treats [arXiv:...] as a style tag and silently deleted every citation from the output. Fixed with markup=False.
+
+## Milestone 5: Make it robust
+- Surprised: for 'quantum basket weaving' the model quietly changed the topic to quantum basket OPTIONS (finance) and summarised those. Search always returns something; relevance has to be judged against the original topic.
+- Broke first: the irrelevant-results problem, not errors. Fixed with explicit 'keep the topic, say nothing relevant' rules in the system prompt.

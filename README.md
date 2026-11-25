@@ -34,3 +34,4 @@ Each milestone is one git commit, so `git log` walks you through the build.
 | 2 | One tool call, by hand | The raw tool-calling protocol: schema in, `tool_calls` out, `role: tool` result back | `paper_agent/one_call.py` |
 | 3 | The agent loop | Model -> tools -> results -> model, until an answer or `max_steps`; tool registry; trace output; minimum-search guard | `paper_agent/agent.py`, `paper_agent/tools/registry.py` |
 | 4 | Grounded citations | `seen_papers` ground truth, regex check of cited ids, one fix-up round, reference list built in code | `paper_agent/citations.py` |
+| 5 | Robustness | Tool calls never raise: unknown tool, bad JSON, pydantic validation, duplicate-call cache, abstract truncation, arXiv retry with backoff, clear error when the model is unreachable | `paper_agent/tools/registry.py` |
