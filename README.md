@@ -1,9 +1,11 @@
-# Research Paper Assistant
+﻿# Research Paper Assistant
 
 A command-line agent that takes a topic, searches arXiv, reads abstracts and
 writes a short literature summary with **real, verified citations**. It is
 built by hand, one milestone at a time, to learn how agents work underneath
 the frameworks.
+
+**New here? Read [USAGE.md](USAGE.md) for a step-by-step guide to using the agent for real research.**
 
 ## Quick start (about 10 minutes)
 
