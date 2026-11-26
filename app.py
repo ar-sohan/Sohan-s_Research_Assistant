@@ -29,6 +29,19 @@ from paper_agent import config
 from paper_agent.agent import Agent
 from paper_agent.cli import build_report, slugify
 
+try:
+    # Hugging Face "ZeroGPU" Spaces refuse to start unless the app declares at
+    # least one @spaces.GPU function. Ours never needs a GPU (the model runs on
+    # Groq), so this placeholder is never called; it only lets the Space start.
+    # On a CPU Space or your own computer `spaces` is not installed: skip it.
+    import spaces
+
+    @spaces.GPU(duration=1)
+    def _zero_gpu_placeholder():
+        return None
+except ImportError:
+    pass
+
 MAX_PER_USER_PER_HOUR = int(os.getenv("WEB_MAX_PER_USER_PER_HOUR", "5"))
 MAX_PER_DAY = int(os.getenv("WEB_MAX_PER_DAY", "100"))
 APP_PASSWORD = os.getenv("APP_PASSWORD", "")
