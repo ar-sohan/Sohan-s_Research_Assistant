@@ -8,6 +8,7 @@ request goes through `_get()`, which enforces that gap.
 """
 
 import re
+import threading
 import time
 
 import feedparser
@@ -23,9 +24,16 @@ STOPWORDS = {"a", "an", "and", "are", "as", "at", "by", "for", "from", "in", "is
 # Module-level timestamp of our last request. Because it lives at module level,
 # it is shared by every call in this process.
 _last_request_at = 0.0
+# With several web users at once, requests must still be 3 s apart: one at a time.
+_request_lock = threading.Lock()
 
 
 def _get(params: dict, retries: int = 1) -> str:
+    with _request_lock:
+        return _get_unlocked(params, retries)
+
+
+def _get_unlocked(params: dict, retries: int = 1) -> str:
     """GET the arXiv API politely: never two requests less than 3 s apart.
 
     Milestone 5: on a network error or a 5xx/429 answer, wait and retry once

@@ -1,11 +1,23 @@
-﻿# Research Paper Assistant
+---
+title: Research Paper Assistant
+emoji: 📚
+colorFrom: indigo
+colorTo: blue
+sdk: gradio
+sdk_version: 6.32.0
+python_version: "3.12"
+app_file: app.py
+pinned: false
+short_description: arXiv literature summaries with verified citations
+---
+# Research Paper Assistant
 
 A command-line agent that takes a topic, searches arXiv, reads abstracts and
 writes a short literature summary with **real, verified citations**. It is
 built by hand, one milestone at a time, to learn how agents work underneath
 the frameworks.
 
-**New here? Read [USAGE.md](USAGE.md) for a step-by-step guide to using the agent for real research.**
+**New here? Read [USAGE.md](USAGE.md) for a step-by-step guide. Want a website your friends can use? See [DEPLOY.md](DEPLOY.md).**
 
 ## Quick start (about 10 minutes)
 

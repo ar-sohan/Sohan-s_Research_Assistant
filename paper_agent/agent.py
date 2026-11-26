@@ -24,6 +24,7 @@ import sys
 
 from openai import APIConnectionError
 from rich.console import Console
+from rich.text import Text
 
 from paper_agent import config
 from paper_agent.citations import build_references, check_citations, remove_citations
@@ -61,8 +62,8 @@ Rules:
 """
 
 
-def _trace_step(step: int, name: str, args: str, result) -> None:
-    """Print one line per tool call so you can see what the agent did."""
+def _format_step(step: int, name: str, args: str, result) -> str:
+    """One line per tool call (with rich markup) so you can see what the agent did."""
     if isinstance(result, dict) and "error" in result:
         outcome = f"[red]error: {result['error'][:120]}[/red]"
     elif isinstance(result, dict) and "note" in result:
@@ -70,7 +71,24 @@ def _trace_step(step: int, name: str, args: str, result) -> None:
         outcome = f"[yellow]{kind}[/yellow]"
     else:
         outcome = f"{len(result) if isinstance(result, list) else 1} result(s)"
-    console.print(f"[dim]step {step}[/dim] [cyan]{name}[/cyan]({args}) -> {outcome}", highlight=False)
+    return f"[dim]step {step}[/dim] [cyan]{name}[/cyan]({args}) -> {outcome}"
+
+
+def _assistant_message(reply) -> dict:
+    """Turn the model's reply into a plain message dict to keep in the history.
+
+    Only role, content and tool_calls are kept. Some providers add extra fields
+    (e.g. a "reasoning" text on gpt-oss models) that other providers, or the
+    same one, may reject when we send the history back.
+    """
+    msg = {"role": "assistant", "content": reply.content or ""}
+    if reply.tool_calls:
+        msg["tool_calls"] = [
+            {"id": c.id, "type": "function",
+             "function": {"name": c.function.name, "arguments": c.function.arguments or "{}"}}
+            for c in reply.tool_calls
+        ]
+    return msg
 
 
 def _papers_in(result) -> list[dict]:
@@ -95,8 +113,10 @@ class Agent:
         self.seen_papers: dict[str, dict] = {}  # Milestone 4: ground truth for citations
         self.dispatch = Dispatcher()            # Milestone 5: safe calls + duplicate cache
         self.stats: dict = {}                   # Milestone 7: numbers about the last ask()
+        self.trace: list[str] = []              # plain-text log of every step (the web app shows it)
 
     def _log(self, text: str) -> None:
+        self.trace.append(Text.from_markup(text).plain)
         if self.verbose:
             console.print(text, highlight=False)
 
@@ -127,7 +147,7 @@ class Agent:
         for step in range(1, self.max_steps + 1):
             self.stats["steps"] = step
             reply = chat(self.messages, tools=tool_schemas())
-            self.messages.append(reply.model_dump(exclude_none=True))
+            self.messages.append(_assistant_message(reply))
 
             if not reply.tool_calls:
                 # Small local models often stop after one search despite the prompt.
@@ -201,12 +221,11 @@ class Agent:
         self._log(f"[yellow]max_steps ({self.max_steps}) reached, forcing a final answer[/yellow]")
         self.messages.append({"role": "user", "content": "Stop searching. Write the answer now from what you have."})
         reply = chat(self.messages)
-        self.messages.append(reply.model_dump(exclude_none=True))
+        self.messages.append(_assistant_message(reply))
         return self._finalize(reply.content)
 
     def _trace(self, step: int, name: str, args: str, result) -> None:
-        if self.verbose:
-            _trace_step(step, name, args, result)
+        self._log(_format_step(step, name, args, result))
 
     def _finalize(self, text: str) -> str:
         """Milestone 4: drop unverified citations and append a reference list built in code."""

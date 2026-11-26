@@ -19,6 +19,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
+web = ["gradio>=5.0"]   # pip install -e ".[web]"  -> python app.py
 
 # This line is what creates the `paper-agent` command after `pip install -e .`
 [project.scripts]
