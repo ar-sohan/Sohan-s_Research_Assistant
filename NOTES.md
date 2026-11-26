@@ -33,3 +33,7 @@ Two lines per milestone: what surprised me, and what broke.
 ## Milestone 7: Evals
 - Surprised: citation validity was 100% on all 12 topics (Milestone 4 works), but recall of landmark papers was only 11%. arXiv's relevance search rarely puts the famous paper (e.g. Attention Is All You Need) in the top 5, so the agent never sees it.
 - Broke: an empty library made the library-first rule skip arXiv calls for nothing, wasting a model call. Now it only skips when the library actually had hits.
+
+## Milestone 8: Polish
+- Surprised: arXiv does not index stopwords, so `all:of` matches nothing and the whole AND query ('chain AND of AND thought') returned zero papers. Some eval topics were hit by this, which partly explains the low recall.
+- Broke: tightening the 'say nothing relevant' rule in Milestone 5 made qwen2.5:7b call relevant chain-of-thought papers 'not relevant'. Loosened the rule; the evals should be re-run to confirm the nonsense-topic case still works.

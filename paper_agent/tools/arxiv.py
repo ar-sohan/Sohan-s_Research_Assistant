@@ -17,6 +17,8 @@ import httpx
 # https://, and httpx does not follow redirects by default. Use https directly.
 ARXIV_URL = "https://export.arxiv.org/api/query"
 MIN_GAP_SECONDS = 3.0
+STOPWORDS = {"a", "an", "and", "are", "as", "at", "by", "for", "from", "in", "is", "of",
+             "on", "or", "the", "to", "with", "using", "via"}
 
 # Module-level timestamp of our last request. Because it lives at module level,
 # it is shared by every call in this process.
@@ -81,7 +83,9 @@ def search_arxiv(query: str, max_results: int = 5) -> list[dict]:
     # arXiv's query syntax only applies a field prefix to the FIRST word:
     # "all:retrieval augmented generation" matches lots of off-topic papers.
     # Prefixing every word and joining with AND keeps results on topic.
-    terms = [t for t in re.split(r"\s+", query.strip()) if t]
+    # Stopwords ("of", "for", "the") are not indexed by arXiv, so "all:of" matches
+    # NOTHING and the whole AND query returns zero papers. Drop them.
+    terms = [t for t in re.split(r"[\s,]+", query.strip()) if t and t.lower() not in STOPWORDS]
     search_query = " AND ".join(f"all:{t}" for t in terms) or "all:*"
     xml = _get({
         "search_query": search_query,

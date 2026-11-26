@@ -51,9 +51,10 @@ Rules:
 - Cite ONLY papers that your tool calls returned. Never cite from memory.
 - Cite inline in exactly this form: [arXiv:1706.03762]
 - Keep the user's topic as it is. Do not swap it for a nearby topic that has more papers.
-- Before writing, check each paper against the ORIGINAL topic. Search engines always return
-  something; a paper that only shares a word with the topic is not relevant.
-- If no paper is really about the topic, answer only: "I found nothing relevant on arXiv
+- A paper that only shares a word with the topic (e.g. "basket options" for "basket weaving")
+  is not relevant; leave it out.
+- Papers about the topic itself, its variants, analyses or applications ARE relevant.
+- Only if not a single paper is about the topic, answer: "I found nothing relevant on arXiv
   for this topic." and explain in one sentence what the searches returned instead.
 - If a tool returns an error, read it, fix your arguments or try another query.
 - For follow-up questions, reuse the papers already in this conversation; search only if needed.
@@ -120,6 +121,7 @@ class Agent:
         searches = 0
         asked_to_fix = False
         self.stats = {"steps": 0, "tool_calls": 0, "arxiv_calls": 0, "library_hits": 0,
+                      "queries": [],  # Milestone 8: shown in the saved report
                       "duplicates_before": self.dispatch.duplicates}
 
         for step in range(1, self.max_steps + 1):
@@ -178,6 +180,11 @@ class Agent:
                 searches += name in SEARCH_TOOLS
                 self.stats["tool_calls"] += 1
                 result = self.dispatch(name, call.function.arguments)
+                if name in SEARCH_TOOLS:
+                    try:
+                        self.stats["queries"].append(f"{name}: {json.loads(call.function.arguments)['query']}")
+                    except (json.JSONDecodeError, KeyError, TypeError):
+                        pass  # bad arguments were already reported to the model by the dispatcher
                 papers = _papers_in(result)
                 is_cached = isinstance(result, dict) and "note" in result
                 if name in ("search_arxiv", "get_paper") and not is_cached:
