@@ -36,3 +36,4 @@ Each milestone is one git commit, so `git log` walks you through the build.
 | 4 | Grounded citations | `seen_papers` ground truth, regex check of cited ids, one fix-up round, reference list built in code | `paper_agent/citations.py` |
 | 5 | Robustness | Tool calls never raise: unknown tool, bad JSON, pydantic validation, duplicate-call cache, abstract truncation, arXiv retry with backoff, clear error when the model is unreachable | `paper_agent/tools/registry.py` |
 | 6 | Memory | `Agent` class keeps `messages` between questions (chat REPL), history compaction, SQLite library of papers and notes, `search_library` and `save_note` tools, library-first rule | `paper_agent/memory.py`, `paper_agent/chat.py` |
+| 7 | Evals | 12 test topics, automatic checks (citation validity, must-find recall, steps, arXiv calls, time), LLM-as-judge for faithfulness and coverage, CSV + table | `evals/run.py`, `evals/topics.jsonl` |

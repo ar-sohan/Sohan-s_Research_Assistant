@@ -1,0 +1,12 @@
+{"topic": "transformer attention mechanism", "must_find": ["1706.03762"]}
+{"topic": "retrieval augmented generation", "must_find": ["2005.11401"]}
+{"topic": "denoising diffusion probabilistic models", "must_find": ["2006.11239"]}
+{"topic": "reasoning and acting in language model agents", "must_find": ["2210.03629"]}
+{"topic": "graph convolutional networks semi-supervised", "must_find": ["1609.02907"]}
+{"topic": "chain of thought prompting", "must_find": ["2201.11903"]}
+{"topic": "vision transformer image recognition", "must_find": ["2010.11929"]}
+{"topic": "low-rank adaptation of large language models", "must_find": ["2106.09685"]}
+{"topic": "generative adversarial networks", "must_find": ["1406.2661"]}
+{"topic": "speech emotion recognition", "must_find": []}
+{"topic": "federated learning privacy", "must_find": []}
+{"topic": "quantum basket weaving", "must_find": [], "expect_nothing": true}

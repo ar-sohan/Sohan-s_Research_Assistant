@@ -162,12 +162,14 @@ class Agent:
             # has seen what the library holds, so the library saves nothing.
             # Rule enforced in code: when the library is in the batch, run it alone
             # first and send the others back as "skipped, decide again".
-            names = [c.function.name for c in reply.tool_calls]
-            library_first = "search_library" in names and len(names) > 1
+            # If the library comes back empty, there is nothing to decide, so the
+            # other calls run as normal.
+            calls = sorted(reply.tool_calls, key=lambda c: c.function.name != "search_library")
+            library_first = calls[0].function.name == "search_library" and len(calls) > 1
 
-            for call in reply.tool_calls:
+            for call in calls:
                 name = call.function.name
-                if library_first and name != "search_library":
+                if library_first and name != "search_library" and self.stats["library_hits"] > 0:
                     result = {"note": "Skipped. Read the search_library results first, then call "
                                       "search_arxiv only for what the library is missing."}
                     self._trace(step, name, call.function.arguments, result)
