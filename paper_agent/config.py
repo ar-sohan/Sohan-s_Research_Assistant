@@ -22,7 +22,8 @@ if os.getenv("GROQ_API_KEY") and not os.getenv("LLM_BASE_URL"):
     # Hosted website (Hugging Face Space): the only setting is the GROQ_API_KEY
     # secret, so Groq becomes the default provider. LLM_MODEL can still override.
     LLM_BASE_URL = "https://api.groq.com/openai/v1"
-    LLM_API_KEY = os.environ["GROQ_API_KEY"]
+    # strip(): a key pasted with a trailing space, newline or quotes is rejected as invalid
+    LLM_API_KEY = os.environ["GROQ_API_KEY"].strip().strip('"').strip("'")
     LLM_MODEL = os.getenv("LLM_MODEL", "openai/gpt-oss-120b")
 else:
     # Local default: Ollama on this computer, no key needed.
